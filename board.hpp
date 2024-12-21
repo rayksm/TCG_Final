@@ -5,6 +5,23 @@
 #define BLUE 1
 
 #define PIECE_NUM 6
+#define MAX_TREE_DEPTH 6
+
+#define mini_m -10000
+#define max_m 10000
+#define MIN_EVAL -10000
+#define MAX_EVAL 10000
+#define MAX_SIM 100
+
+// hash parameter
+#define MAX_COLOR 2     // e.g. color 0 red and 1 blue
+#define MAX_DICE 6
+#define MAP_SIZE 5 
+struct TTEntry {
+    double alpha;
+    double beta;
+    double m;
+};
 
 typedef struct _board
 {
@@ -14,7 +31,7 @@ typedef struct _board
     // blank is -1
     int board[25];
     char moves[PIECE_NUM][2];
-    int move_count, remain_depth;
+    int move_count, heuristic_depth, tree_depth;
     //double alpha, beta;
     char moving_color;
     char dice;
@@ -31,7 +48,7 @@ typedef struct _board
     
     double star1(double alpha, double beta);
     double negascout(double alpha, double beta);
-    double evaluation();
+    void evaluation();
 
 } Board;
 #endif
