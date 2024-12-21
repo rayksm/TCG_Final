@@ -9,24 +9,13 @@
 #include <unordered_map>
 #include <vector>
 #include <algorithm> // For std::max and std::min
-#define mini_m -100
-#define max_m 100
-#define MIN_EVAL -100
-#define MAX_EVAL 100
 
-// hash parameter
-#define MAX_COLOR 2     // e.g. color 0 red and 1 blue
-#define MAX_DICE 6
-#define MAP_SIZE 5 
-struct TTEntry {
-    double alpha;
-    double beta;
-    double m;
-};
 
 // You should use mersenne twister and a random_device seed for the pseudo-random generator
 // Call random_num()%num to randomly pick number from 0 to num-1
 std::mt19937 random_num(std::random_device{}());
+
+int step_counter = 0;
 
 double double_max(double a, double b){
     return a > b ? a : b;
@@ -107,62 +96,76 @@ TTEntry* lookupTT(const int piece_position[MAX_COLOR][MAX_DICE], int moving_colo
 }
 //---------------------------------------------------------------------------------------------------------------
 // heuristic evaluation
-double bluemap[5][5] = {
-    { 0.0,  1.0,  4.0,  8.0, 13.0},
-    { 1.0,  1.0,  3.0,  7.0, 12.0},
-    { 4.0,  3.0,  2.0,  6.0, 11.0},
-    { 8.0,  7.0,  6.0,  5.0, 10.0},
-    {13.0, 12.0, 11.0, 10.0,  9.0},
+int bluemap[5][5] = {
+    { 0,  1,  4,  8, 13},
+    { 1,  1,  3,  7, 12},
+    { 4,  3,  2,  6, 11},
+    { 8,  7,  6,  5, 10},
+    {13, 12, 11, 10,  9},
 };
-double redmap[5][5] = {
-    { 9.0, 10.0, 11.0, 12.0, 13.0},
-    {10.0,  5.0,  6.0,  7.0,  8.0},
-    {11.0,  6.0,  2.0,  3.0,  4.0},
-    {12.0,  7.0,  3.0,  1.0,  1.0},
-    {13.0,  8.0,  4.0,  1.0,  0.0},
+int redmap[5][5] = {
+    { 9, 10, 11, 12, 13},
+    {10,  5,  6,  7,  8},
+    {11,  6,  2,  3,  4},
+    {12,  7,  3,  1,  1},
+    {13,  8,  4,  1,  0},
 };
 
 // for heuristic evaluation
-double Board::evaluation(){
+void Board::evaluation(){
     // blue end move, and red start to move
-    double heuristic_estimate = 0.0;
-    if(moving_color == 0){       
+    int heuristic_estimate = 0;
+    if(moving_color == 0){    
+        heuristic_estimate += (PIECE_NUM - __builtin_popcount(piece_bits[0]));
+        heuristic_estimate += (__builtin_popcount(piece_bits[1]));     
+        /*
         int now_piece;
         for(int i = 0; i < PIECE_NUM; i++){
             // player
             now_piece = piece_position[moving_color][i];
-            if(now_piece != -1)
-                heuristic_estimate -= redmap[now_piece / 5][now_piece % 5];
-            else
-                heuristic_estimate += 1;
+            if(now_piece == -1) heuristic_estimate += 1;
+            //if(now_piece != -1)
+            //    heuristic_estimate -= redmap[now_piece / 5][now_piece % 5];
+            //else
+            //    heuristic_estimate += 1;
             
             // opposite
             now_piece = piece_position[moving_color ^ 1][i];
-            if(now_piece != -1)
-                heuristic_estimate += bluemap[now_piece / 5][now_piece % 5];
-            else
-                heuristic_estimate -= 1;
+            if(now_piece != -1) heuristic_estimate += 1;
+            //if(now_piece != -1)
+            //    heuristic_estimate += bluemap[now_piece / 5][now_piece % 5];
+            //else
+            //    heuristic_estimate -= 1;
         }
+        */
     }
     else{
+        heuristic_estimate += (PIECE_NUM - __builtin_popcount(piece_bits[1]));
+        heuristic_estimate += (__builtin_popcount(piece_bits[0]));
+        /*
         int now_piece;
         for(int i = 0; i < PIECE_NUM; i++){
             // player
             now_piece = piece_position[moving_color][i];
-            if(now_piece != -1)
-                heuristic_estimate -= bluemap[now_piece / 5][now_piece % 5];
-            else
-                heuristic_estimate += 1;
+            if(now_piece == -1) heuristic_estimate += 1;
+            //if(now_piece != -1)
+            //    heuristic_estimate -= bluemap[now_piece / 5][now_piece % 5];
+            //else
+            //    heuristic_estimate += 1;
             
             // opposite
             now_piece = piece_position[moving_color ^ 1][i];
-            if(now_piece != -1)
-                heuristic_estimate += redmap[now_piece / 5][now_piece % 5];
-            else
-                heuristic_estimate -= 1;
+            if(now_piece -= -1) heuristic_estimate += 1;
+            //if(now_piece != -1)
+            //    heuristic_estimate += redmap[now_piece / 5][now_piece % 5];
+            //else
+            //    heuristic_estimate -= 1;
         }
+        */
     }
-    return heuristic_estimate;
+    // larger means better
+    heuristic_depth = heuristic_estimate;
+    //heuristic_depth = std::abs(heuristic_estimate);
 }
 
 // stochastic use star1
@@ -174,7 +177,7 @@ double Board::star1(double alpha, double beta){
     for (int dice = 0; dice < 6; dice++) {
         Board newboard = *(this);
         newboard.dice = dice;
-        newboard.remain_depth -= 1;
+        //newboard.tree_depth -= 1;
         double score = -newboard.negascout(double_max(windowLeft, MIN_EVAL), double_min(windowRight, MAX_EVAL));
         //printf("nega score = %lf\n", score);
         lowerBound += (score - MIN_EVAL) / (double)6;
@@ -196,10 +199,15 @@ double Board::star1(double alpha, double beta){
 // deterministic negascout
 double Board::negascout(double alpha, double beta){
     // if win or remain depth = 0, return, and time control and some heuristic
-    if(check_winner() || remain_depth == 0){
-        return simulate();
+    if(check_winner() || tree_depth == 0 || heuristic_depth + std::max(MAX_TREE_DEPTH - tree_depth, 0) >= 5){
+        //return simulate();
         //return evaluation();
+        int count_sim = 0;
+        for(int i = 0; i < MAX_SIM; i++)
+            count_sim += simulate();
+        return count_sim;
     }
+    //printf("heuristic_depth = %d\n", heuristic_depth);
 
     // table search
     TTEntry* entry = lookupTT(piece_position, moving_color, dice);
@@ -227,12 +235,13 @@ double Board::negascout(double alpha, double beta){
     for(int i = 0; i < move_count; i++){
         Board newboard = *(this);
         newboard.move(i);
-        //newboard.remain_depth -= 1;
+        newboard.evaluation();
+        newboard.tree_depth -= 1;
         
         // alpha beta in star1
         t = -newboard.star1(-n, -double_max(alpha, m));
         if (t > m) {
-            if (t >= beta || n == beta) {
+            if (t >= beta || n == beta || tree_depth < 3) {
                 m = t;
             } else {
                 m = -newboard.star1(-beta, -t); // research
@@ -253,10 +262,28 @@ double Board::negascout(double alpha, double beta){
 int Board::decide(){
     initZobristKeys();
     generate_moves();
+    // No possible moves
     if (move_count == 0) {
-        // No possible moves
         return -1;
     }
+
+    // first step greedy
+    if (step_counter == 0){
+        int start = moves[0][0]; 
+        for(int i = 0; i < move_count; i++){
+            int dest = moves[i][1];
+            if(start == 0 || start == 5 || start == 24 || start == 19){
+                if(std::abs(start - dest) == 5) return i;    
+            }
+            else if(start == 1 || start == 23){
+                if(std::abs(start - dest) == 1) return i;
+            }
+            else{
+                if(std::abs(start - dest) == 6) return i;
+            }
+        }
+    }
+    step_counter++;
 
     double best_score = mini_m;
     std::vector<int> best_moves;
@@ -264,7 +291,9 @@ int Board::decide(){
     for (int i = 0; i < move_count; i++) {
         Board newboard = *this;
         newboard.move(i);
-        newboard.remain_depth -= 1;
+        newboard.evaluation();
+        newboard.tree_depth -= 1;
+        //newboard.remain_depth -= 1;
 
         // Evaluate the move using star1 with initial alpha and beta
         double score = -newboard.star1(-MAX_EVAL, MAX_EVAL);
