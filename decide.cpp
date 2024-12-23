@@ -16,6 +16,7 @@
 std::mt19937 random_num(std::random_device{}());
 
 int step_counter = 0, now_max_depth;
+double theshold = 2.0;
 struct timespec start, end;
 
 double double_max(double a, double b){
@@ -184,12 +185,9 @@ double Board::star1(double alpha, double beta, int depth){
     for (int dice = 0; dice < 6; dice++) {
         Board newboard = *(this);
         newboard.dice = dice;
-        //if(!((newboard.piece_bits[newboard.moving_color] >> dice) & 1)){
-        //    remain_count += 1;
-        //    continue;
-        //}
+
         //newboard.tree_depth -= 1;
-        //double score = -newboard.negascout(double_max(windowLeft, MIN_EVAL), double_min(windowRight, MAX_EVAL), depth - 1);
+        //double score = newboard.negascout(double_max(windowLeft, MIN_EVAL), double_min(windowRight, MAX_EVAL), depth - 1);
         double score = -newboard.negascout(-double_min(windowRight, MAX_EVAL), -double_max(windowLeft, MIN_EVAL), depth - 1);
         lowerBound += (score - MIN_EVAL) / (double)6;
         upperBound += (score - MAX_EVAL) / (double)6;
@@ -198,13 +196,17 @@ double Board::star1(double alpha, double beta, int depth){
         if (score >= windowRight) return lowerBound;
         //fail low
         if (score <= windowLeft) return upperBound;
+
+        windowLeft = double_max(windowLeft, score - MAX_EVAL);
+        windowRight = double_min(windowRight, score - MIN_EVAL);
         
+        //if(!((newboard.piece_bits[newboard.moving_color] >> dice) & 1)){
+        //    remain_count += 1;
+        //    continue;
+        //}
         total += remain_count * double_max(score, pre_score);
         pre_score = score;
         remain_count = 1;
-        
-        windowLeft = double_max(windowLeft, score - MAX_EVAL);
-        windowRight = double_min(windowRight, score - MIN_EVAL);
     }
     return (total / (double)6);
 
@@ -222,7 +224,7 @@ double Board::negascout(double alpha, double beta, int depth){
         int count_sim = 0;
         for(int i = 0; i < MAX_SIM; i++)
             count_sim += simulate();
-        return depth % 2 == ((MAX_TREE_DEPTH % 2)) ? -count_sim : count_sim;
+        return depth % 2 == ((now_max_depth % 2)) ? -count_sim : count_sim;
         //return count_sim;
         //return depth % 2 == ((now_max_depth % 2) ^ 1) ? heuristic_depth : -heuristic_depth;
         //return heuristic_depth;
@@ -231,7 +233,7 @@ double Board::negascout(double alpha, double beta, int depth){
 
     // table search
     uint64_t node = lookupTT(piece_position, moving_color, dice);
-    if(node < MAX_TABLE && transpositionTable[node].depth > depth){
+    if(node < MAX_TABLE && transpositionTable[node].depth >= depth){
         TTEntry entry = transpositionTable[node];
         if (entry.alpha < entry.m && entry.beta > entry.m) {
             return entry.m;
@@ -250,7 +252,7 @@ double Board::negascout(double alpha, double beta, int depth){
 
     // negascout
     generate_moves();
-    double m = mini_m, n = beta, t;
+    double m = MIN_EVAL, n = beta, t;
 
     // for negascout
     for(int i = 0; i < move_count; i++){
@@ -270,7 +272,7 @@ double Board::negascout(double alpha, double beta, int depth){
         }
 
         // cut off
-        if(m >= max_m || m >= beta)
+        if(m >= MAX_EVAL || m >= beta)
             return m;
 
         // set new window
@@ -290,28 +292,13 @@ int Board::decide(){
 
     // first step greedy
     step_counter++;
-    // (step_counter == 1){
-        
-    int start = moves[0][0]; 
-    for(int i = 0; i < move_count; i++){
-        int dest = moves[i][1];
-        if(start == 0 || start == 5 || start == 24 || start == 19){
-            if(std::abs(start - dest) == 5) return i;    
-        }
-        else if(start == 1 || start == 23){
-            if(std::abs(start - dest) == 1) return i;
-        }
-        else if(start == 6 || start == 18){
-            if(std::abs(start - dest) == 6) return i;
-        }
-    }
-    //}
-    
+    if(step_counter == 1) return greedymoves();
 
-    double best_score = mini_m;
+    double best_score = MIN_EVAL;
     std::vector<int> best_moves;
     for(int tree_depth = 1; tree_depth <= MAX_TREE_DEPTH; tree_depth+=2){
         if(tree_depth > 1 && time_exceed()){
+            if(tree_depth < MAX_TREE_DEPTH / 2) return greedymoves();
             break;
             //printf("Break\n");
         }
@@ -327,7 +314,12 @@ int Board::decide(){
             //newboard.remain_depth -= 1;
 
             // Evaluate the move using star1 with initial alpha and beta
-            double score = -newboard.star1(MIN_EVAL, MAX_EVAL, tree_depth);
+            double score;
+            if(tree_depth > 1)
+                score = -newboard.star1(best_score - theshold, best_score + theshold, tree_depth);
+            else
+                score = -newboard.star1(MIN_EVAL, MAX_EVAL, tree_depth);
+
             //printf("%lf\n", score);
             if (score > best_score){
                 best_score = score;
@@ -383,4 +375,21 @@ bool Board::time_exceed(){
     
     if(now_time + 1e-4 > total_remain_time) return 1;
     else return 0;
+}
+
+int Board::greedymoves(){
+    int start = moves[0][0]; 
+    for(int i = 0; i < move_count; i++){
+        int dest = moves[i][1];
+        if(start == 0 || start == 5 || start == 24 || start == 19){
+            if(std::abs(start - dest) == 5) return i;    
+        }
+        else if(start == 1 || start == 23){
+            if(std::abs(start - dest) == 1) return i;
+        }
+        else{
+            if(std::abs(start - dest) == 6) return i;
+        }
+    }
+    return 0;
 }
