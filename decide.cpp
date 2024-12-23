@@ -16,6 +16,7 @@
 std::mt19937 random_num(std::random_device{}());
 
 int step_counter = 0;
+struct timespec start, end;
 
 double double_max(double a, double b){
     return a > b ? a : b;
@@ -23,7 +24,6 @@ double double_max(double a, double b){
 double double_min(double a, double b){
     return a < b ? a : b;
 }
-
 //---------------------------------------------------------------------------------------------------------------
 // Global Zobrist tables
 TTEntry transpositionTable[MAX_TABLE];
@@ -171,7 +171,7 @@ void Board::evaluation(){
 }
 
 // stochastic use star1
-double Board::star1(double alpha, double beta){
+double Board::star1(double alpha, double beta, int depth){
     double total = 0;
     double windowLeft = (double)6 * (alpha - MAX_EVAL) + MAX_EVAL;
     double windowRight = (double)6 * (beta - MIN_EVAL) + MIN_EVAL;
@@ -181,7 +181,7 @@ double Board::star1(double alpha, double beta){
         newboard.dice = dice;
         //newboard.tree_depth -= 1;
         //double score = -newboard.negascout(double_max(windowLeft, MIN_EVAL), double_min(windowRight, MAX_EVAL));
-        double score = -newboard.negascout(-double_min(windowRight, MAX_EVAL), -double_max(windowLeft, MIN_EVAL));
+        double score = -newboard.negascout(-double_min(windowRight, MAX_EVAL), -double_max(windowLeft, MIN_EVAL), depth - 1);
         lowerBound += (score - MIN_EVAL) / (double)6;
         upperBound += (score - MAX_EVAL) / (double)6;
         
@@ -199,16 +199,17 @@ double Board::star1(double alpha, double beta){
 }
 
 // deterministic negascout
-double Board::negascout(double alpha, double beta){
+double Board::negascout(double alpha, double beta, int depth){
     // if win or remain depth = 0, return, and time control and some heuristic
-    if(check_winner() || tree_depth == 0 || heuristic_depth + std::max(MAX_TREE_DEPTH - tree_depth, 0) >= MAX_TREE_DEPTH + 2){
+    //printf("%d\n", heuristic_depth + std::max(MAX_TREE_DEPTH - depth, 0));
+    if(check_winner() || depth == 0 || heuristic_depth + std::max(MAX_TREE_DEPTH - depth, 0) >= MAX_TREE_DEPTH + 3 || time_exceed()){
     //if(check_winner() || tree_depth == 0){
         //return simulate();
         //return evaluation();
         int count_sim = 0;
         for(int i = 0; i < MAX_SIM; i++)
             count_sim += simulate();
-        return tree_depth % 2 == ((MAX_TREE_DEPTH % 2) ^ 1) ? count_sim : -count_sim;
+        return depth % 2 == ((MAX_TREE_DEPTH % 2)) ? count_sim : -count_sim;
         //return count_sim;
     }
     //printf("heuristic_depth = %d\n", heuristic_depth);
@@ -241,15 +242,15 @@ double Board::negascout(double alpha, double beta){
         Board newboard = *(this);
         newboard.move(i);
         newboard.evaluation();
-        newboard.tree_depth -= 1;
+        //newboard.tree_depth -= 1;
         
         // alpha beta in star1
-        t = -newboard.star1(-n, -double_max(alpha, m));
+        t = -newboard.star1(-n, -double_max(alpha, m), depth);
         if (t > m) {
-            if (t >= beta || n == beta || tree_depth < 1) {
+            if (t >= beta || n == beta || depth < 1) {
                 m = t;
             } else {
-                m = -newboard.star1(-beta, -t); // research
+                m = -newboard.star1(-beta, -t, depth); // research
             }
         }
 
@@ -264,7 +265,7 @@ double Board::negascout(double alpha, double beta){
     return m;
 }
 
-int Board::decide(double remain_time){
+int Board::decide(){
     initZobristKeys();
     generate_moves();
     // No possible moves
@@ -292,24 +293,27 @@ int Board::decide(double remain_time){
 
     double best_score = mini_m;
     std::vector<int> best_moves;
+    for(int tree_depth = 1; tree_depth <= MAX_TREE_DEPTH; tree_depth++){
+        if(tree_depth > 1 && time_exceed()) break;
 
-    for (int i = 0; i < move_count; i++) {
-        Board newboard = *this;
-        newboard.move(i);
-        newboard.evaluation();
-        newboard.tree_depth -= 1;
-        //newboard.remain_depth -= 1;
+        for (int i = 0; i < move_count; i++) {
+            Board newboard = *this;
+            newboard.move(i);
+            newboard.evaluation();
+            //newboard.tree_depth -= 1;
+            //newboard.remain_depth -= 1;
 
-        // Evaluate the move using star1 with initial alpha and beta
-        double score = -newboard.star1(-MAX_EVAL, MAX_EVAL);
-        //printf("%lf\n", score);
-        if (score > best_score){
-            best_score = score;
-            best_moves.clear();
-            best_moves.push_back(i);
-        }
-        else if (score == best_score){
-            best_moves.push_back(i);
+            // Evaluate the move using star1 with initial alpha and beta
+            double score = -newboard.star1(-MAX_EVAL, MAX_EVAL, tree_depth);
+            //printf("%lf\n", score);
+            if (score > best_score){
+                best_score = score;
+                best_moves.clear();
+                best_moves.push_back(i);
+            }
+            else if (score == best_score){
+                best_moves.push_back(i);
+            }
         }
     }
 
@@ -341,4 +345,19 @@ bool Board::simulate(){
     // Lose!
     else
         return false;
+}
+
+// calculate remain time
+void Board::cal_remain_time(double total_time){
+    //clock_gettime(CLOCK_REALTIME, &end);
+    clock_gettime(CLOCK_REALTIME, &start);
+    total_remain_time = total_time / std::max(15 - step_counter, 3);
+}
+
+bool Board::time_exceed(){
+    clock_gettime(CLOCK_REALTIME, &end);
+    double now_time = (double)((end.tv_sec + end.tv_nsec * 1e-9) - (double)(start.tv_sec + start.tv_nsec * 1e-9));
+    
+    if(now_time + 1e-4 > total_remain_time) return 1;
+    else return 0;
 }
