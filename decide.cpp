@@ -26,10 +26,12 @@ double double_min(double a, double b){
 
 //---------------------------------------------------------------------------------------------------------------
 // Global Zobrist tables
+TTEntry transpositionTable[MAX_TABLE];
 uint64_t ZobristPiece[MAX_COLOR * MAX_DICE][MAP_SIZE * MAP_SIZE];                 // for indexing by piece type (0, 1) * (0, 1, 2, 3, 4, 5)
 uint64_t ZobristColor[MAX_COLOR];                  // +1 for indexing colors (0, 1)
 uint64_t ZobristDice[MAX_DICE];                    // For dice values (0, 1, 2, 3, 4, 5)
-std::unordered_map<uint64_t, TTEntry> transpositionTable;
+//std::unordered_map<uint64_t, TTEntry> transpositionTable;
+
 // Initialize Zobrist keys (call once at program start)
 void initZobristKeys() {
     // Initialize piece-position keys
@@ -51,7 +53,7 @@ void initZobristKeys() {
 }
 
 // Compute the Zobrist hash of the current board state
-uint64_t computeZobristHash(const int piece_position[MAX_COLOR][MAX_DICE], int moving_color, int dice) {
+uint64_t computeZobristHash(int piece_position[MAX_COLOR][MAX_DICE], int moving_color, int dice) {
     uint64_t h = 0ULL;
 
     // XOR in piece positions
@@ -70,29 +72,29 @@ uint64_t computeZobristHash(const int piece_position[MAX_COLOR][MAX_DICE], int m
     // XOR in dice
     h ^= ZobristDice[dice];
 
-    return h;
+    return h % MAX_TABLE;
 }
 
 // Insert an entry into the transposition table
-void insertTT(const int piece_position[MAX_COLOR][MAX_DICE], int moving_color, int dice, double alpha, double beta, double m) {
+void insertTT(int piece_position[MAX_COLOR][MAX_DICE], int moving_color, int dice, double alpha, double beta, double m) {
     uint64_t hashKey = computeZobristHash(piece_position, moving_color, dice);
     TTEntry entry;
     
     entry.alpha = alpha;
     entry.beta = beta;
     entry.m = m;
+    entry.flag = true;
 
     transpositionTable[hashKey] = entry;
 }
 
 // Check if a position is in the transposition table
-TTEntry* lookupTT(const int piece_position[MAX_COLOR][MAX_DICE], int moving_color, int dice) {
+uint64_t lookupTT(int piece_position[MAX_COLOR][MAX_DICE], int moving_color, int dice) {
     uint64_t hashKey = computeZobristHash(piece_position, moving_color, dice);
-    auto it = transpositionTable.find(hashKey);
-    if (it != transpositionTable.end()) {
-        return &(it->second);
+    if (transpositionTable[hashKey].flag) {
+        return hashKey;
     }
-    return nullptr;
+    return MAX_TABLE + 1;
 }
 //---------------------------------------------------------------------------------------------------------------
 // heuristic evaluation
@@ -115,9 +117,9 @@ int redmap[5][5] = {
 void Board::evaluation(){
     // blue end move, and red start to move
     int heuristic_estimate = 0;
-    if(moving_color == 0){    
-        heuristic_estimate += (PIECE_NUM - __builtin_popcount(piece_bits[0]));
-        heuristic_estimate += (__builtin_popcount(piece_bits[1]));     
+    if(moving_color == RED){    
+        heuristic_estimate += (PIECE_NUM - __builtin_popcount(piece_bits[RED]));
+        heuristic_estimate += (__builtin_popcount(piece_bits[BLUE]));     
         /*
         int now_piece;
         for(int i = 0; i < PIECE_NUM; i++){
@@ -140,8 +142,8 @@ void Board::evaluation(){
         */
     }
     else{
-        heuristic_estimate += (PIECE_NUM - __builtin_popcount(piece_bits[1]));
-        heuristic_estimate += (__builtin_popcount(piece_bits[0]));
+        heuristic_estimate += (PIECE_NUM - __builtin_popcount(piece_bits[BLUE]));
+        heuristic_estimate += (__builtin_popcount(piece_bits[RED]));
         /*
         int now_piece;
         for(int i = 0; i < PIECE_NUM; i++){
@@ -178,8 +180,8 @@ double Board::star1(double alpha, double beta){
         Board newboard = *(this);
         newboard.dice = dice;
         //newboard.tree_depth -= 1;
-        double score = -newboard.negascout(double_max(windowLeft, MIN_EVAL), double_min(windowRight, MAX_EVAL));
-        //printf("nega score = %lf\n", score);
+        //double score = -newboard.negascout(double_max(windowLeft, MIN_EVAL), double_min(windowRight, MAX_EVAL));
+        double score = -newboard.negascout(-double_min(windowRight, MAX_EVAL), -double_max(windowLeft, MIN_EVAL));
         lowerBound += (score - MIN_EVAL) / (double)6;
         upperBound += (score - MAX_EVAL) / (double)6;
         
@@ -199,30 +201,33 @@ double Board::star1(double alpha, double beta){
 // deterministic negascout
 double Board::negascout(double alpha, double beta){
     // if win or remain depth = 0, return, and time control and some heuristic
-    if(check_winner() || tree_depth == 0 || heuristic_depth + std::max(MAX_TREE_DEPTH - tree_depth, 0) >= 5){
+    if(check_winner() || tree_depth == 0 || heuristic_depth + std::max(MAX_TREE_DEPTH - tree_depth, 0) >= MAX_TREE_DEPTH + 2){
+    //if(check_winner() || tree_depth == 0){
         //return simulate();
         //return evaluation();
         int count_sim = 0;
         for(int i = 0; i < MAX_SIM; i++)
             count_sim += simulate();
-        return count_sim;
+        return tree_depth % 2 == ((MAX_TREE_DEPTH % 2) ^ 1) ? count_sim : -count_sim;
+        //return count_sim;
     }
     //printf("heuristic_depth = %d\n", heuristic_depth);
 
     // table search
-    TTEntry* entry = lookupTT(piece_position, moving_color, dice);
-    if(entry){
-        if (entry->alpha < entry->m && entry->beta > entry->m) {
-            return entry->m;
+    uint64_t node = lookupTT(piece_position, moving_color, dice);
+    if(node < MAX_TABLE){
+        TTEntry entry = transpositionTable[node];
+        if (entry.alpha < entry.m && entry.beta > entry.m) {
+            return entry.m;
         }
-        else if (entry->beta <= entry->m) {
+        else if (entry.beta <= entry.m) {
             // beta cut, lower bound
-            alpha = double_max(alpha, entry->m);
+            alpha = double_max(alpha, entry.m);
             if (alpha >= beta) return alpha;
         }
         else {
             // alpha cut, upper bound
-            beta = double_min(beta, entry->m);
+            beta = double_min(beta, entry.m);
             if (beta <= alpha) return beta;
         }
     }
@@ -241,7 +246,7 @@ double Board::negascout(double alpha, double beta){
         // alpha beta in star1
         t = -newboard.star1(-n, -double_max(alpha, m));
         if (t > m) {
-            if (t >= beta || n == beta || tree_depth < 3) {
+            if (t >= beta || n == beta || tree_depth < 1) {
                 m = t;
             } else {
                 m = -newboard.star1(-beta, -t); // research
@@ -259,7 +264,7 @@ double Board::negascout(double alpha, double beta){
     return m;
 }
 
-int Board::decide(){
+int Board::decide(double remain_time){
     initZobristKeys();
     generate_moves();
     // No possible moves
