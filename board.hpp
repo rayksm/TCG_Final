@@ -5,15 +5,13 @@
 #define BLUE 1
 
 #define PIECE_NUM 6
-#define MAX_TREE_DEPTH 21
+#define MAX_TREE_DEPTH 9
 
-#define mini_m -1000
-#define max_m 1000
-#define MIN_EVAL -1000
-#define MAX_EVAL 1000
+#define MIN_EVAL -200
+#define MAX_EVAL 200
 
-#define MAX_SIM 100
-#define MAX_TABLE 500000
+#define MAX_SIM 200
+#define MAX_TABLE 867281
 
 // hash parameter
 #define MAX_COLOR 2     // e.g. color 0 red and 1 blue
@@ -57,6 +55,7 @@ typedef struct _board
     void evaluation();
     void cal_remain_time(double total_time);
     bool time_exceed();
+    int greedymoves();
 
 } Board;
 #endif
