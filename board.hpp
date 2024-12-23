@@ -5,14 +5,14 @@
 #define BLUE 1
 
 #define PIECE_NUM 6
-#define MAX_TREE_DEPTH 15
+#define MAX_TREE_DEPTH 21
 
-#define mini_m -100
-#define max_m 100
-#define MIN_EVAL -100
-#define MAX_EVAL 100
+#define mini_m -1000
+#define max_m 1000
+#define MIN_EVAL -1000
+#define MAX_EVAL 1000
 
-#define MAX_SIM 50
+#define MAX_SIM 100
 #define MAX_TABLE 500000
 
 // hash parameter
@@ -23,6 +23,7 @@ struct TTEntry {
     double alpha;
     double beta;
     double m;
+    int depth;
     bool flag = false; 
 };
 
@@ -34,7 +35,7 @@ typedef struct _board
     // blank is -1
     int board[25];
     char moves[PIECE_NUM][2];
-    int move_count, heuristic_depth;
+    int move_count, heuristic_depth = 0;
     //int tree_depth;
     //double alpha, beta;
     char moving_color;
