@@ -5,13 +5,13 @@
 #define BLUE 1
 
 #define PIECE_NUM 6
-#define MAX_TREE_DEPTH 9
+#define MAX_TREE_DEPTH 6
 
 #define MIN_EVAL -200
 #define MAX_EVAL 200
 
 #define MAX_SIM 200
-#define MAX_TABLE 867281
+#define MAX_TABLE 27170637
 
 // hash parameter
 #define MAX_COLOR 2     // e.g. color 0 red and 1 blue
@@ -22,6 +22,8 @@ struct TTEntry {
     double beta;
     double m;
     int depth;
+    int overlap = 0;
+    unsigned int realkey;
     bool flag = false; 
 };
 
@@ -39,6 +41,7 @@ typedef struct _board
     char moving_color;
     char dice;
     double total_remain_time;
+    int initial_blue, initial_red;
     void init_with_piecepos(int input_piecepos[2][6], char input_color);
     void move(int id_with_dice);
     void generate_moves();
@@ -52,10 +55,12 @@ typedef struct _board
     
     double star1(double alpha, double beta, int depth);
     double negascout(double alpha, double beta, int depth);
-    void evaluation();
+    void heuristic_estimation();
     void cal_remain_time(double total_time);
     bool time_exceed();
     int greedymoves();
+    void initial_evaluation();
+    double evaluation();
 
 } Board;
 #endif
