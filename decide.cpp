@@ -73,7 +73,7 @@ unsigned int computeZobristHash(int piece_position[MAX_COLOR][MAX_DICE], int mov
     // XOR in dice
     h ^= ZobristDice[dice];
 
-    return h % MAX_TABLE;
+    return h;
 }
 
 // Insert an entry into the transposition table
@@ -85,95 +85,130 @@ void insertTT(int piece_position[MAX_COLOR][MAX_DICE], int moving_color, int dic
     entry.beta = beta;
     entry.m = m;
     entry.depth = depth;
+    entry.realkey = hashKey;
     entry.flag = true;
-
-    transpositionTable[hashKey] = entry;
+    
+    transpositionTable[hashKey % MAX_TABLE] = entry;
 }
 
 // Check if a position is in the transposition table
 unsigned int lookupTT(int piece_position[MAX_COLOR][MAX_DICE], int moving_color, int dice) {
     unsigned int hashKey = computeZobristHash(piece_position, moving_color, dice);
-    if (transpositionTable[hashKey].flag) {
-        return hashKey;
+    if (transpositionTable[hashKey % MAX_TABLE].flag) {
+        // collision
+        if(transpositionTable[hashKey % MAX_TABLE].realkey != hashKey){
+            //printf("Collision!! %u, %u \n", transpositionTable[hashKey % MAX_TABLE].realkey, hashKey);
+            return MAX_TABLE + 1;
+        }
+            
+        return hashKey % MAX_TABLE;
     }
     return MAX_TABLE + 1;
 }
 //---------------------------------------------------------------------------------------------------------------
 // heuristic evaluation
+// closer to the end higher value
+
 int bluemap[5][5] = {
-    { 0,  1,  4,  8, 13},
-    { 1,  1,  3,  7, 12},
-    { 4,  3,  2,  6, 11},
-    { 8,  7,  6,  5, 10},
     {13, 12, 11, 10,  9},
-};
-int redmap[5][5] = {
-    { 9, 10, 11, 12, 13},
-    {10,  5,  6,  7,  8},
-    {11,  6,  2,  3,  4},
-    {12,  7,  3,  1,  1},
-    {13,  8,  4,  1,  0},
+    {12,  8,  7,  6,  5},
+    {11,  7,  4,  3,  2},
+    {10,  6,  3,  1,  1},
+    { 9,  5,  2,  1,  0},
 };
 
+int redmap[5][5] = {
+    { 0,  1,  2,  5,  9},
+    { 1,  1,  3,  6, 10},
+    { 2,  3,  4,  7, 11},
+    { 5,  6,  7,  8, 12},
+    { 9, 10, 11, 12, 13},
+};
+
+
+/*
+int bluemap[5][5] = {
+    { 4,  4,  4,  4,  4},
+    { 4,  3,  3,  3,  3},
+    { 4,  3,  2,  2,  2},
+    { 4,  3,  2,  1,  1},
+    { 4,  3,  2,  1,  0},
+};
+
+int redmap[5][5] = {
+    { 0,  1,  2,  3,  4},
+    { 1,  1,  2,  3,  4},
+    { 2,  2,  2,  3,  4},
+    { 3,  3,  3,  3,  4},
+    { 4,  4,  4,  4,  4},
+};
+*/
 // for heuristic evaluation
-void Board::evaluation(){
+void Board::initial_evaluation(){
+    initial_red  = PIECE_NUM - __builtin_popcount(piece_bits[RED]) + __builtin_popcount(piece_bits[BLUE]);
+    initial_blue = PIECE_NUM - __builtin_popcount(piece_bits[BLUE]) + __builtin_popcount(piece_bits[RED]);
+}
+void Board::heuristic_estimation(){
     // blue end move, and red start to move
     int heuristic_estimate = 0;
     if(moving_color == RED){    
-        //heuristic_estimate += (PIECE_NUM - __builtin_popcount(piece_bits[RED]));
-        //heuristic_estimate += (__builtin_popcount(piece_bits[BLUE]));     
-        
-        
-        int now_piece;
-        for(int i = 0; i < PIECE_NUM; i++){
-            // player
-            now_piece = piece_position[moving_color][i];
-            //if(now_piece == -1) heuristic_estimate += 1;
-            if(now_piece != -1)
-                heuristic_estimate -= redmap[now_piece / 5][now_piece % 5];
-            else
-                heuristic_estimate += 8;
-            
-            // opposite
-            now_piece = piece_position[moving_color ^ 1][i];
-            //if(now_piece != -1) heuristic_estimate += 1;
-            if(now_piece != -1)
-                heuristic_estimate += bluemap[now_piece / 5][now_piece % 5];
-            else
-                heuristic_estimate -= 8;
-        }
-        
+        heuristic_estimate += (PIECE_NUM - __builtin_popcount(piece_bits[RED]));
+        heuristic_estimate += (__builtin_popcount(piece_bits[BLUE]));   
+        heuristic_estimate -= initial_red;  
     }
     else{
-        //heuristic_estimate += (PIECE_NUM - __builtin_popcount(piece_bits[BLUE]));
-        //heuristic_estimate += (__builtin_popcount(piece_bits[RED]));
-        
+        heuristic_estimate += (PIECE_NUM - __builtin_popcount(piece_bits[BLUE]));
+        heuristic_estimate += (__builtin_popcount(piece_bits[RED]));
+        heuristic_estimate -= initial_blue;
+    }
+
+    // larger means better the remaining pieces compare with initial board
+    heuristic_depth = heuristic_estimate;
+}
+double Board::evaluation(){
+    int evaluation_estimate = 0;
+    int kill = 15;
+    if(moving_color == RED){     
+        int now_piece;
+        for(int i = 0; i < PIECE_NUM; i++){
+            // player
+            now_piece = piece_position[RED][i];
+            if(now_piece != -1)
+                evaluation_estimate += redmap[now_piece / 5][now_piece % 5];
+            else
+                evaluation_estimate += kill;
+            
+            // opposite
+            now_piece = piece_position[BLUE][i];
+            if(now_piece != -1)
+                evaluation_estimate -= bluemap[now_piece / 5][now_piece % 5];
+            else
+                evaluation_estimate -= kill;
+        }
+    }
+    else{       
         
         int now_piece;
         for(int i = 0; i < PIECE_NUM; i++){
             // player
-            now_piece = piece_position[moving_color][i];
-            //if(now_piece == -1) heuristic_estimate += 1;
+            now_piece = piece_position[BLUE][i];
             if(now_piece != -1)
-                heuristic_estimate -= bluemap[now_piece / 5][now_piece % 5];
+                evaluation_estimate += bluemap[now_piece / 5][now_piece % 5];
             else
-                heuristic_estimate += 8;
+                evaluation_estimate += kill;
             
             // opposite
-            now_piece = piece_position[moving_color ^ 1][i];
-            //if(now_piece -= -1) heuristic_estimate += 1;
+            now_piece = piece_position[RED][i];
             if(now_piece != -1)
-                heuristic_estimate += redmap[now_piece / 5][now_piece % 5];
+                evaluation_estimate -= redmap[now_piece / 5][now_piece % 5];
             else
-                heuristic_estimate -= 8;
+                evaluation_estimate -= kill;
         }
         
     }
     // larger means better
-    heuristic_depth -= heuristic_estimate;
-    //heuristic_depth = std::abs(heuristic_estimate);
+    return evaluation_estimate;
 }
-
 // stochastic use star1
 double Board::star1(double alpha, double beta, int depth){
     double total = 0;
@@ -216,7 +251,8 @@ double Board::star1(double alpha, double beta, int depth){
 double Board::negascout(double alpha, double beta, int depth){
     // if win or remain depth = 0, return, and time control and some heuristic
     //printf("%d\n", heuristic_depth);
-    if(check_winner() || depth == 0 || heuristic_depth >= 100|| time_exceed()){
+    //if(check_winner() || depth == 0 || time_exceed()){
+    if(check_winner() || depth == 0 || heuristic_depth >= 4|| time_exceed()){
     //if(check_winner() || tree_depth == 0){
         //return simulate();
         //return evaluation();
@@ -228,6 +264,7 @@ double Board::negascout(double alpha, double beta, int depth){
         //return count_sim;
         //return depth % 2 == ((now_max_depth % 2) ^ 1) ? heuristic_depth : -heuristic_depth;
         //return heuristic_depth;
+        //return depth % 2 == ((now_max_depth % 2)) ? evaluation() : -evaluation();
     }
     //printf("heuristic_depth = %d\n", heuristic_depth);
 
@@ -258,7 +295,7 @@ double Board::negascout(double alpha, double beta, int depth){
     for(int i = 0; i < move_count; i++){
         Board newboard = *(this);
         newboard.move(i);
-        newboard.evaluation();
+        newboard.heuristic_estimation();
         //newboard.tree_depth -= 1;
         
         // alpha beta in star1
@@ -285,6 +322,7 @@ double Board::negascout(double alpha, double beta, int depth){
 int Board::decide(){
     initZobristKeys();
     generate_moves();
+    initial_evaluation();
     // No possible moves
     if (move_count == 0) {
         return -1;
@@ -296,7 +334,7 @@ int Board::decide(){
 
     double best_score = MIN_EVAL;
     std::vector<int> best_moves;
-    for(int tree_depth = 1; tree_depth <= MAX_TREE_DEPTH; tree_depth+=2){
+    for(int tree_depth = 1; tree_depth <= MAX_TREE_DEPTH; tree_depth+=1){
         if(tree_depth > 1 && time_exceed()){
             if(tree_depth < MAX_TREE_DEPTH / 2) return greedymoves();
             break;
@@ -309,7 +347,7 @@ int Board::decide(){
             //printf("%d, %d, i = %d\n", step_counter, tree_depth, i);
             Board newboard = *this;
             newboard.move(i);
-            newboard.evaluation();
+            newboard.heuristic_estimation();
             //newboard.tree_depth -= 1;
             //newboard.remain_depth -= 1;
 
