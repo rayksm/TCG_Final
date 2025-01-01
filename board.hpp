@@ -5,24 +5,24 @@
 #define BLUE 1
 
 #define PIECE_NUM 6
-#define MAX_TREE_DEPTH 6
 
-#define MIN_EVAL -200
-#define MAX_EVAL 200
+#define MAX_TREE_DEPTH 15
+#define MIN_EVAL -50
+#define MAX_EVAL 50
 
-#define MAX_SIM 200
-#define MAX_TABLE 27170637
+#define MAX_SIM 10
+#define MAX_TABLE 88076977
 
 // hash parameter
 #define MAX_COLOR 2     // e.g. color 0 red and 1 blue
 #define MAX_DICE 6
 #define MAP_SIZE 5 
 struct TTEntry {
-    double alpha;
-    double beta;
+    //double alpha;
+    //double beta;
     double m;
-    int depth;
-    int overlap = 0;
+    int depth = MAX_TREE_DEPTH;
+
     unsigned int realkey;
     bool flag = false; 
 };
@@ -35,9 +35,8 @@ typedef struct _board
     // blank is -1
     int board[25];
     char moves[PIECE_NUM][2];
-    int move_count, heuristic_depth = 0;
-    //int tree_depth;
-    //double alpha, beta;
+    int move_count;
+
     char moving_color;
     char dice;
     double total_remain_time;
@@ -55,11 +54,10 @@ typedef struct _board
     
     double star1(double alpha, double beta, int depth);
     double negascout(double alpha, double beta, int depth);
-    void heuristic_estimation();
     void cal_remain_time(double total_time);
     bool time_exceed();
-    int greedymoves();
-    void initial_evaluation();
+    int cal_heuristic_estimated();
+    bool my_remained_pieces();
     double evaluation();
 
 } Board;
